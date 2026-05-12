@@ -1,7 +1,14 @@
 {
   "name": "next-route-guard",
   "version": "0.1.0",
-  "description": "Auth guard middleware and route utilities for Next.js App Router (compose, CORS, rate limit, jose/Better Auth/NextAuth adapters).",
+  "description": "Auth guard and route utilities for Next.js App Router",
+  "author": "Lupu Claudiu <lupuclaudiuandrei@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lupuc/next-route-guard"
+  },
+  "homepage": "https://github.com/lupuc/next-route-guard#readme",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -18,14 +25,13 @@
       }
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "pnpm test && pnpm build"
   },
   "keywords": [
     "nextjs",
@@ -34,8 +40,6 @@
     "typescript",
     "app-router"
   ],
-  "author": "",
-  "license": "MIT",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=18.18"
