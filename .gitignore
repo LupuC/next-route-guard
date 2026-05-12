@@ -7,3 +7,6 @@ dist
 coverage
 .turbo
 .pnpm-debug.log*
+
+# Local-only project notes (not published)
+about.md
