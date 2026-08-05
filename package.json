@@ -1,6 +1,6 @@
 {
   "name": "next-route-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Auth guard and route utilities for Next.js App Router",
   "author": "Lupu Claudiu <lupuclaudiuandrei@gmail.com>",
   "license": "MIT",

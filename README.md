@@ -43,6 +43,8 @@ export const POST = compose(
 
 Returns `{ middleware, requireAuth, config: { matcher } }`.
 
+> **`matcher` must be a static literal.** Next.js statically analyzes the `config` export in `middleware.ts` and ignores dynamic values, so `export const config = guard.config` will **not** scope the middleware. Write the matcher yourself: `export const config = { matcher: ["/app/:path*"] }`. The returned `config` is only a convenience for copying/logging.
+
 - **Middleware:** unauthenticated users are **redirected** to `redirectTo` on protected paths.
 - **`requireAuth` / `createRequireAuth`:** throws a **`Response`** (`401` / `403` JSON) so it works inside `compose` without extra branching.
 - **Better Auth in middleware:** **cookie presence only** (fast, optimistic). Full validation happens in **`withGuard`** or any route helper that uses `betterAuthGetSession`.
@@ -77,18 +79,23 @@ Same adapters as `createGuard`, but for a **single** route handler. Unauthentica
 
 ### Rate limit `store`
 
-Implement `{ get(key), set(key, count, ttlMs) }` for Redis / Upstash; default is in-memory (not durable on serverless).
+For Redis / Upstash, implement `increment(key, ttlMs)`: atomically bump the counter and return the new count, applying the TTL **only when the key is created** (fixed window — e.g. Redis `INCR` + `PEXPIRE ... NX`). Sync or async both work. The default store is in-memory (per isolate, not durable on serverless).
 
 ```ts
 rateLimit({
   limit: 100,
   window: "1m",
   store: {
-    get: async (key) => { /* ... */ return null },
-    set: async (key, count, ttlMs) => { /* ... */ },
+    increment: async (key, ttlMs) => {
+      const count = await redis.incr(key);
+      if (count === 1) await redis.pexpire(key, ttlMs);
+      return count;
+    },
   },
 });
 ```
+
+A `{ get(key), set(key, count, ttlMs) }` store is also accepted (sync or async), but it is not atomic and its window resets on every write — prefer `increment`.
 
 ## Combining guard + compose
 

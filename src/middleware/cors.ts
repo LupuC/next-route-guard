@@ -53,23 +53,23 @@ function buildHeaders(
   const reqOrigin = requestOrigin(req);
   const methods = (cfg.methods ?? DEFAULT_METHODS).map(normalizeMethod);
 
-  let allowOrigin = "*";
+  // `null` means "disallowed" — the header is omitted entirely. Never emit the
+  // literal string "null" (sandboxed iframes genuinely have that origin) and
+  // never combine `*` with credentials (browsers reject the response).
+  let allowOrigin: string | null;
   if (cfg.origin === undefined || cfg.origin === "*") {
-    allowOrigin = "*";
+    allowOrigin = cfg.credentials ? reqOrigin || null : "*";
   } else if (typeof cfg.origin === "string") {
-    allowOrigin = cfg.origin;
+    allowOrigin = cfg.origin === reqOrigin || !reqOrigin ? cfg.origin : null;
   } else if (Array.isArray(cfg.origin)) {
-    allowOrigin = cfg.origin.includes(reqOrigin) ? reqOrigin : "null";
+    allowOrigin = cfg.origin.includes(reqOrigin) ? reqOrigin : null;
   } else {
-    allowOrigin = cfg.origin(reqOrigin) ? reqOrigin : "null";
+    allowOrigin = cfg.origin(reqOrigin) ? reqOrigin : null;
   }
 
-  if (cfg.credentials && allowOrigin !== "*") {
-    h.set("Access-Control-Allow-Origin", reqOrigin || allowOrigin);
-    h.set("Access-Control-Allow-Credentials", "true");
-  } else {
-    h.set("Access-Control-Allow-Origin", allowOrigin === "null" ? "null" : allowOrigin);
-    if (cfg.credentials) {
+  if (allowOrigin !== null) {
+    h.set("Access-Control-Allow-Origin", allowOrigin);
+    if (cfg.credentials && allowOrigin !== "*") {
       h.set("Access-Control-Allow-Credentials", "true");
     }
   }

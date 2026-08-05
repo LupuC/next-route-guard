@@ -5,8 +5,15 @@ import { getClientIp } from "../utils/getClientIp.js";
 export type RateLimitWindow = "30s" | "1m" | "5m" | "1h";
 
 export interface RateLimitStore {
-  get(key: string): number | null;
-  set(key: string, count: number, ttlMs: number): void;
+  /**
+   * Atomically increment the counter for `key` and return the new count.
+   * The window TTL must be applied only when the key is created, never
+   * refreshed on subsequent increments (fixed window). Maps directly onto
+   * Redis `INCR` + `PEXPIRE ... NX`. Preferred over `get`/`set`.
+   */
+  increment?(key: string, ttlMs: number): number | Promise<number>;
+  get?(key: string): number | null | Promise<number | null>;
+  set?(key: string, count: number, ttlMs: number): void | Promise<void>;
 }
 
 export interface RateLimitOptions {
@@ -36,42 +43,52 @@ export function parseWindowToMs(w: string): number {
   return n * 3_600_000;
 }
 
-function createMemoryStore(): RateLimitStore {
+function createMemoryStore(): Required<Pick<RateLimitStore, "increment">> {
   const data = new Map<string, { count: number; expiresAt: number }>();
   return {
-    get(key: string): number | null {
+    increment(key: string, ttlMs: number): number {
+      const now = Date.now();
       const row = data.get(key);
-      if (!row) return null;
-      if (Date.now() > row.expiresAt) {
-        data.delete(key);
-        return null;
+      if (!row || now > row.expiresAt) {
+        data.set(key, { count: 1, expiresAt: now + ttlMs });
+        return 1;
       }
+      row.count += 1;
       return row.count;
-    },
-    set(key: string, count: number, ttlMs: number) {
-      data.set(key, { count, expiresAt: Date.now() + ttlMs });
     },
   };
 }
 
 export function rateLimit(options: RateLimitOptions) {
   const ttlMs = parseWindowToMs(options.window);
-  const store = options.store ?? createMemoryStore();
+  const store: RateLimitStore = options.store ?? createMemoryStore();
   const keyFn = options.keyFn ?? ((req: NextRequest) => getClientIp(req) || "unknown");
+
+  const tooMany = () => {
+    const retryAfterSec = Math.ceil(ttlMs / 1000);
+    const base = jsonError("Too many requests", 429, {
+      limit: options.limit,
+      window: options.window,
+    });
+    const headers = new Headers(base.headers);
+    headers.set("Retry-After", String(retryAfterSec));
+    return new Response(base.body, { status: base.status, headers });
+  };
 
   return async (req: NextRequest): Promise<Response | void> => {
     const key = keyFn(req);
-    const prev = store.get(key) ?? 0;
-    if (prev >= options.limit) {
-      const retryAfterSec = Math.ceil(ttlMs / 1000);
-      const base = jsonError("Too many requests", 429, {
-        limit: options.limit,
-        window: options.window,
-      });
-      const headers = new Headers(base.headers);
-      headers.set("Retry-After", String(retryAfterSec));
-      return new Response(base.body, { status: base.status, headers });
+
+    if (store.increment) {
+      const count = await store.increment(key, ttlMs);
+      if (count > options.limit) return tooMany();
+      return;
     }
-    store.set(key, prev + 1, ttlMs);
+
+    if (!store.get || !store.set) {
+      throw new Error("rateLimit: store must implement `increment` or both `get` and `set`");
+    }
+    const prev = (await store.get(key)) ?? 0;
+    if (prev >= options.limit) return tooMany();
+    await store.set(key, prev + 1, ttlMs);
   };
 }
